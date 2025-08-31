@@ -12,7 +12,8 @@ enum TokenType {
     T_BITAND, T_BITOR, T_BITXOR, T_BITNOT, T_LEFTSHIFT, T_RIGHTSHIFT,
     T_PARENL, T_PARENR, T_BRACEL, T_BRACER, T_BRACKL, T_BRACKR,
     T_COMMA, T_SEMICOLON, T_COLON, T_QUESTION, T_DOT,
-    T_COMMENT, T_UNKNOWN, T_EOF
+    T_COMMENT, T_UNKNOWN, T_EOF,
+    T_INVALID_IDENTIFIER , T_INCREMENT , T_PLUS_ASSIGN// Added for invalid identifiers
 };
 
 struct Token {
@@ -38,18 +39,25 @@ vector<pair<regex, TokenType>> tokenPatterns = {
     {regex("^continue"), T_CONTINUE},
     {regex("^true|^false"), T_BOOLLIT},
     
-    // Identifiers
+    // Invalid identifiers (e.g., starting with a digit or containing invalid chars)
+    {regex("^[0-9][a-zA-Z0-9_]*"), T_INVALID_IDENTIFIER}, // e.g., 123abc
+    {regex("^[a-zA-Z_][a-zA-Z0-9_]*[^a-zA-Z0-9_\\s;{}()\\[\\],=+\\-*/%&|^~<>?:.\"]"), T_INVALID_IDENTIFIER}, // e.g., my@var
+    
+    // Valid identifiers
     {regex("^[a-zA-Z_][a-zA-Z0-9_]*"), T_IDENTIFIER},
     
     // Literals
-    {regex("^[0-9]+\\.[0-9]+([eE][+-]?[0-9]+)?"), T_FLOATLIT}, // float with exponent
-    {regex("^[0-9]+\\.[0-9]+"), T_FLOATLIT}, // simple float
+    {regex("^[0-9]+\\.[0-9]+([eE][+-]?[0-9]+)?"), T_FLOATLIT},
+    {regex("^[0-9]+\\.[0-9]+"), T_FLOATLIT},
+    {regex("^0[xX][0-9a-fA-F]+"), T_INTLIT}, // Hexadecimal literals
     {regex("^[0-9]+"), T_INTLIT},
-    {regex("^\"([^\"\\\\]|\\\\.)*\""), T_STRINGLIT}, // handles escaped characters
+    {regex("^\"([^\"\\\\]|\\\\.)*\""), T_STRINGLIT},
     
     // Operators
     {regex("^=="), T_EQUALSOP},
     {regex("^="), T_ASSIGNOP},
+    {regex("^\\+\\+"), T_INCREMENT},
+    {regex("^\\+\\="), T_PLUS_ASSIGN},
     {regex("^\\+"), T_PLUS},
     {regex("^-"), T_MINUS},
     {regex("^\\*"), T_MULT},
@@ -85,10 +93,8 @@ vector<pair<regex, TokenType>> tokenPatterns = {
     {regex("^\\?"), T_QUESTION},
     {regex("^\\."), T_DOT},
     
-    // Comments (single line)
+    // Comments
     {regex("^//[^\n]*"), T_COMMENT},
-    
-    // Multi-line comments (will be handled separately)
 };
 
 vector<Token> tokenize(const string &src) {
@@ -99,7 +105,7 @@ vector<Token> tokenize(const string &src) {
     smatch match;
 
     while (!code.empty()) {
-        // Skip whitespace and track line/column
+        // Skip whitespace
         if (regex_search(code, match, regex("^\\s+"))) {
             for (char c : match.str()) {
                 if (c == '\n') {
@@ -118,15 +124,11 @@ vector<Token> tokenize(const string &src) {
             string comment = match.str();
             code = match.suffix().str();
             column += 2;
-            
-            // Find the end of the comment
             size_t end_pos = code.find("*/");
             if (end_pos == string::npos) {
                 cerr << "Error: Unclosed multi-line comment at line " << line << ", column " << column << endl;
                 break;
             }
-            
-            // Count lines and columns in the comment
             string comment_content = code.substr(0, end_pos);
             for (char c : comment_content) {
                 if (c == '\n') {
@@ -136,7 +138,6 @@ vector<Token> tokenize(const string &src) {
                     column++;
                 }
             }
-            
             code = code.substr(end_pos + 2);
             column += 2;
             continue;
@@ -163,7 +164,14 @@ vector<Token> tokenize(const string &src) {
                     break;
                 }
                 
-                tokens.push_back({tp.second, token_value, line, column});
+                // Report invalid identifier error
+                if (tp.second == T_INVALID_IDENTIFIER) {
+                    cerr << "Error: Invalid identifier '" << token_value << "' at line " << line 
+                         << ", column " << column << endl;
+                    tokens.push_back({T_INVALID_IDENTIFIER, token_value, line, column});
+                } else {
+                    tokens.push_back({tp.second, token_value, line, column});
+                }
                 
                 // Update position
                 for (char c : token_value) {
@@ -182,7 +190,8 @@ vector<Token> tokenize(const string &src) {
         }
 
         if (!matched) {
-            cerr << "Error: Unknown token at line " << line << ", column " << column << " -> '" << code.substr(0, 1) << "'" << endl;
+            cerr << "Error: Unknown token at line " << line << ", column " << column 
+                 << " -> '" << code.substr(0, 1) << "'" << endl;
             tokens.push_back({T_UNKNOWN, string(1, code[0]), line, column});
             column++;
             code.erase(0, 1);
@@ -193,7 +202,6 @@ vector<Token> tokenize(const string &src) {
     return tokens;
 }
 
-// Helper function to print token type names
 string tokenTypeToString(TokenType type) {
     switch(type) {
         case T_FUNCTION: return "T_FUNCTION";
@@ -248,31 +256,36 @@ string tokenTypeToString(TokenType type) {
         case T_COMMENT: return "T_COMMENT";
         case T_UNKNOWN: return "T_UNKNOWN";
         case T_EOF: return "T_EOF";
+        case T_INVALID_IDENTIFIER: return "T_INVALID_IDENTIFIER";
         default: return "UNKNOWN";
     }
 }
 
 int main() {
-    string program = R"(fn int my_fn(int x, float y) {
-        // This is a comment
-        string my_str = "Hello \"world\"!\n\tEscaped";
-        bool my_bool = true;
-        int result = x * y + 10;
-        
-        if (x <= 40 && y != 0) {
-            for (int i = 0; i < 10; i++) {
-                result += i & 0xFF;
+    string program = R"(
+        fn int my_fn(int x, float y) {
+            // This is a comment
+            string my_str = "Hello \"world\"!\n\tEscaped";
+            bool my_bool = true;
+            int 123abc; // Invalid identifier
+            int my@var; // Invalid identifier
+            int result = x * y + 10;
+            
+            if (x <= 40 && y != 0) {
+                for (int i = 0; i < 10; i++) {
+                    result += i & 0xFF;
+                }
             }
+            
+            /* Multi-line
+               comment */
+            return result << 2;
         }
-        
-        /* Multi-line
-           comment */
-        return result << 2;
-    })";
+    )";
 
     vector<Token> tokens = tokenize(program);
     for (auto &t : tokens) {
-        if (t.type != T_COMMENT) { // Skip printing comments
+        if (t.type != T_COMMENT) {
             cout << "Token(" << tokenTypeToString(t.type) << ", \"" << t.value 
                  << "\") at line " << t.line << ", column " << t.column << endl;
         }
