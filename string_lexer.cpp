@@ -80,7 +80,7 @@ private:
     }
     
     Token make_token(TokenType type, const string& value) {
-        return {type, value, line, column - value.length()};
+        return {type, value, line, (column - value.length())};
     }
     
     Token parse_identifier() {
