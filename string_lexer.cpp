@@ -1,9 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <cctype>
-#include <unordered_map>
-#include <optional>
+#include <set>
 
 using namespace std;
 
@@ -17,7 +15,8 @@ enum TokenType {
     T_BITAND, T_BITOR, T_BITXOR, T_BITNOT, T_LEFTSHIFT, T_RIGHTSHIFT,
     T_PARENL, T_PARENR, T_BRACEL, T_BRACER, T_BRACKL, T_BRACKR,
     T_COMMA, T_SEMICOLON, T_COLON, T_QUESTION, T_DOT,
-    T_COMMENT, T_UNKNOWN, T_EOF
+    T_COMMENT, T_UNKNOWN, T_EOF,
+    T_INVALID_IDENTIFIER, T_INCREMENT, T_PLUS_ASSIGN
 };
 
 struct Token {
@@ -27,338 +26,311 @@ struct Token {
     int column;
 };
 
-class Lexer {
-private:
-    string source;
-    size_t position;
-    int line;
-    int column;
-    char current_char;
-    
-    unordered_map<string, TokenType> keywords = {
-        {"fn", T_FUNCTION},
-        {"int", T_INT},
-        {"float", T_FLOAT},
-        {"string", T_STRING},
-        {"bool", T_BOOL},
-        {"return", T_RETURN},
-        {"if", T_IF},
-        {"else", T_ELSE},
-        {"for", T_FOR},
-        {"while", T_WHILE},
-        {"break", T_BREAK},
-        {"continue", T_CONTINUE},
-        {"true", T_BOOLLIT},
-        {"false", T_BOOLLIT}
-    };
-    
-    void advance() {
-        if (position < source.length()) {
-            if (current_char == '\n') {
+// List of keywords for comparison
+const set<string> keywords = {
+    "fn", "int", "float", "string", "bool", "return",
+    "if", "else", "for", "while", "break", "continue",
+    "true", "false"
+};
+
+vector<Token> tokenize(const string &src) {
+    vector<Token> tokens;
+    int pos = 0;
+    int line = 1;
+    int column = 1;
+
+    while (pos < src.size()) {
+        char c = src[pos];
+
+        // Skip whitespace
+        if (isspace(c)) {
+            if (c == '\n') {
                 line++;
                 column = 1;
             } else {
                 column++;
             }
-            current_char = source[position++];
-        } else {
-            current_char = '\0';
+            pos++;
+            continue;
         }
-    }
-    
-    char peek() const {
-        if (position < source.length()) {
-            return source[position];
-        }
-        return '\0';
-    }
-    
-    void skip_whitespace() {
-        while (current_char != '\0' && isspace(current_char)) {
-            advance();
-        }
-    }
-    
-    Token make_token(TokenType type, const string& value) {
-        return {type, value, line, (column - value.length())};
-    }
-    
-    Token parse_identifier() {
-        string result;
-        int start_col = column;
-        
-        while (current_char != '\0' && (isalnum(current_char) || current_char == '_')) {
-            result += current_char;
-            advance();
-        }
-        
-        auto it = keywords.find(result);
-        if (it != keywords.end()) {
-            return make_token(it->second, result);
-        }
-        return make_token(T_IDENTIFIER, result);
-    }
-    
-    Token parse_number() {
-        string result;
-        int start_col = column;
-        bool is_float = false;
-        
-        // Parse integer part
-        while (current_char != '\0' && isdigit(current_char)) {
-            result += current_char;
-            advance();
-        }
-        
-        // Check for decimal point
-        if (current_char == '.') {
-            is_float = true;
-            result += current_char;
-            advance();
-            
-            // Parse fractional part
-            while (current_char != '\0' && isdigit(current_char)) {
-                result += current_char;
-                advance();
+
+        // Handle single-line comments
+        if (pos + 1 < src.size() && src[pos] == '/' && src[pos + 1] == '/') {
+            while (pos < src.size() && src[pos] != '\n') {
+                pos++;
+                column++;
             }
+            continue;
         }
-        
-        // Check for exponent
-        if (current_char == 'e' || current_char == 'E') {
-            is_float = true;
-            result += current_char;
-            advance();
-            
-            // Check for sign
-            if (current_char == '+' || current_char == '-') {
-                result += current_char;
-                advance();
-            }
-            
-            // Parse exponent digits
-            while (current_char != '\0' && isdigit(current_char)) {
-                result += current_char;
-                advance();
-            }
-        }
-        
-        return make_token(is_float ? T_FLOATLIT : T_INTLIT, result);
-    }
-    
-    Token parse_string() {
-        string result;
-        int start_col = column;
-        advance(); // Skip opening quote
-        
-        while (current_char != '\0' && current_char != '"') {
-            if (current_char == '\\') {
-                advance(); // Skip backslash
-                if (current_char == '\0') {
-                    break;
+
+        // Handle multi-line comments
+        if (pos + 1 < src.size() && src[pos] == '/' && src[pos + 1] == '*') {
+            int start_line = line;
+            int start_column = column;
+            pos += 2;
+            column += 2;
+            while (pos + 1 < src.size() && !(src[pos] == '*' && src[pos + 1] == '/')) {
+                if (src[pos] == '\n') {
+                    line++;
+                    column = 1;
+                } else {
+                    column++;
                 }
-                // Handle escape sequences
-                switch (current_char) {
-                    case 'n': result += '\n'; break;
-                    case 't': result += '\t'; break;
-                    case 'r': result += '\r'; break;
-                    case '"': result += '"'; break;
-                    case '\\': result += '\\'; break;
-                    default: result += current_char; break;
+                pos++;
+            }
+            if (pos + 1 >= src.size()) {
+                cerr << "Error: Unclosed multi-line comment at line " << start_line << ", column " << start_column << endl;
+                break;
+            }
+            pos += 2;
+            column += 2;
+            continue;
+        }
+
+        // Handle string literals
+        if (c == '"') {
+            string value = "\"";
+            int start_line = line;
+            int start_column = column;
+            pos++;
+            column++;
+            bool escaped = false;
+            while (pos < src.size() && (escaped || src[pos] != '"')) {
+                if (src[pos] == '\n') {
+                    line++;
+                    column = 1;
+                } else {
+                    column++;
                 }
-                advance();
+                if (src[pos] == '\\' && !escaped) {
+                    escaped = true;
+                } else {
+                    escaped = false;
+                }
+                value += src[pos];
+                pos++;
+            }
+            if (pos >= src.size()) {
+                cerr << "Error: Unclosed string literal at line " << start_line << ", column " << start_column << endl;
+                break;
+            }
+            value += '"';
+            pos++;
+            column++;
+            tokens.push_back({T_STRINGLIT, value, start_line, start_column});
+            continue;
+        }
+
+        // Handle identifiers and keywords
+        if (isalpha(c) || c == '_') {
+            string value;
+            int start_line = line;
+            int start_column = column;
+            bool invalid = false;
+            while (pos < src.size() && (isalnum(src[pos]) || src[pos] == '_')) {
+                value += src[pos];
+                pos++;
+                column++;
+            }
+            // Check for invalid characters after valid identifier characters
+            if (pos < src.size() && !isspace(src[pos]) && !ispunct(src[pos])) {
+                invalid = true;
+                while (pos < src.size() && !isspace(src[pos]) && !ispunct(src[pos])) {
+                    value += src[pos];
+                    pos++;
+                    column++;
+                }
+            }
+            if (invalid) {
+                cerr << "Error: Invalid identifier '" << value << "' at line " << start_line << ", column " << start_column << endl;
+                tokens.push_back({T_INVALID_IDENTIFIER, value, start_line, start_column});
+            } else if (keywords.count(value)) {
+                TokenType type;
+                if (value == "fn") type = T_FUNCTION;
+                else if (value == "int") type = T_INT;
+                else if (value == "float") type = T_FLOAT;
+                else if (value == "string") type = T_STRING;
+                else if (value == "bool") type = T_BOOL;
+                else if (value == "return") type = T_RETURN;
+                else if (value == "if") type = T_IF;
+                else if (value == "else") type = T_ELSE;
+                else if (value == "for") type = T_FOR;
+                else if (value == "while") type = T_WHILE;
+                else if (value == "break") type = T_BREAK;
+                else if (value == "continue") type = T_CONTINUE;
+                else if (value == "true" || value == "false") type = T_BOOLLIT;
+                else type = T_IDENTIFIER; // Should not happen due to keywords set
+                tokens.push_back({type, value, start_line, start_column});
             } else {
-                result += current_char;
-                advance();
+                tokens.push_back({T_IDENTIFIER, value, start_line, start_column});
             }
+            continue;
         }
-        
-        if (current_char == '"') {
-            advance(); // Skip closing quote
-            return make_token(T_STRINGLIT, result);
+
+        // Handle invalid identifiers starting with digits
+        if (isdigit(c)) {
+            string value;
+            int start_line = line;
+            int start_column = column;
+            bool is_float = false;
+            bool is_hex = false;
+            // Check for hexadecimal
+            if (c == '0' && pos + 1 < src.size() && (src[pos + 1] == 'x' || src[pos + 1] == 'X')) {
+                is_hex = true;
+                value += src[pos];
+                value += src[pos + 1];
+                pos += 2;
+                column += 2;
+                while (pos < src.size() && (isdigit(src[pos]) || (tolower(src[pos]) >= 'a' && tolower(src[pos]) <= 'f'))) {
+                    value += src[pos];
+                    pos++;
+                    column++;
+                }
+                tokens.push_back({T_INTLIT, value, start_line, start_column});
+                continue;
+            }
+            // Collect digits
+            while (pos < src.size() && isdigit(src[pos])) {
+                value += src[pos];
+                pos++;
+                column++;
+            }
+            // Check for float
+            if (pos < src.size() && src[pos] == '.') {
+                is_float = true;
+                value += src[pos];
+                pos++;
+                column++;
+                while (pos < src.size() && isdigit(src[pos])) {
+                    value += src[pos];
+                    pos++;
+                    column++;
+                }
+                // Check for exponent
+                if (pos < src.size() && (src[pos] == 'e' || src[pos] == 'E')) {
+                    value += src[pos];
+                    pos++;
+                    column++;
+                    if (pos < src.size() && (src[pos] == '+' || src[pos] == '-')) {
+                        value += src[pos];
+                        pos++;
+                        column++;
+                    }
+                    while (pos < src.size() && isdigit(src[pos])) {
+                        value += src[pos];
+                        pos++;
+                        column++;
+                    }
+                }
+            }
+            // Check for invalid identifier (digits followed by letters)
+            if (pos < src.size() && (isalpha(src[pos]) || src[pos] == '_')) {
+                while (pos < src.size() && (isalnum(src[pos]) || src[pos] == '_')) {
+                    value += src[pos];
+                    pos++;
+                    column++;
+                }
+                cerr << "Error: Invalid identifier '" << value << "' at line " << start_line << ", column " << start_column << endl;
+                tokens.push_back({T_INVALID_IDENTIFIER, value, start_line, start_column});
+                continue;
+            }
+            tokens.push_back({is_float ? T_FLOATLIT : T_INTLIT, value, start_line, start_column});
+            continue;
+        }
+
+        // Handle operators and punctuation
+        string value(1, c);
+        TokenType type = T_UNKNOWN;
+        int start_line = line;
+        int start_column = column;
+
+        if (pos + 1 < src.size()) {
+            string two_chars = src.substr(pos, 2);
+            if (two_chars == "==") { type = T_EQUALSOP; value = two_chars; pos += 2; column += 2; }
+            else if (two_chars == "<=") { type = T_LTE; value = two_chars; pos += 2; column += 2; }
+            else if (two_chars == ">=") { type = T_GTE; value = two_chars; pos += 2; column += 2; }
+            else if (two_chars == "!=") { type = T_NEQ; value = two_chars; pos += 2; column += 2; }
+            else if (two_chars == "&&") { type = T_AND; value = two_chars; pos += 2; column += 2; }
+            else if (two_chars == "||") { type = T_OR; value = two_chars; pos += 2; column += 2; }
+            else if (two_chars == "++") { type = T_INCREMENT; value = two_chars; pos += 2; column += 2; }
+            else if (two_chars == "+=") { type = T_PLUS_ASSIGN; value = two_chars; pos += 2; column += 2; }
+            else if (two_chars == "<<") { type = T_LEFTSHIFT; value = two_chars; pos += 2; column += 2; }
+            else if (two_chars == ">>") { type = T_RIGHTSHIFT; value = two_chars; pos += 2; column += 2; }
+            else {
+                // Single-character operators and punctuation
+                switch (c) {
+                    case '=': type = T_ASSIGNOP; break;
+                    case '+': type = T_PLUS; break;
+                    case '-': type = T_MINUS; break;
+                    case '*': type = T_MULT; break;
+                    case '/': type = T_DIV; break;
+                    case '%': type = T_MOD; break;
+                    case '<': type = T_LT; break;
+                    case '>': type = T_GT; break;
+                    case '!': type = T_NOT; break;
+                    case '&': type = T_BITAND; break;
+                    case '|': type = T_BITOR; break;
+                    case '^': type = T_BITXOR; break;
+                    case '~': type = T_BITNOT; break;
+                    case '(': type = T_PARENL; break;
+                    case ')': type = T_PARENR; break;
+                    case '{': type = T_BRACEL; break;
+                    case '}': type = T_BRACER; break;
+                    case '[': type = T_BRACKL; break;
+                    case ']': type = T_BRACKR; break;
+                    case ',': type = T_COMMA; break;
+                    case ';': type = T_SEMICOLON; break;
+                    case ':': type = T_COLON; break;
+                    case '?': type = T_QUESTION; break;
+                    case '.': type = T_DOT; break;
+                    default:
+                        cerr << "Error: Unknown token at line " << line << ", column " << column 
+                             << " -> '" << c << "'" << endl;
+                        break;
+                }
+                pos++;
+                column++;
+            }
         } else {
-            return make_token(T_UNKNOWN, "Unclosed string");
-        }
-    }
-    
-    Token parse_comment() {
-        string result;
-        int start_col = column;
-        
-        if (peek() == '/') { // Single line comment
-            advance(); // Skip first '/'
-            advance(); // Skip second '/'
-            
-            while (current_char != '\0' && current_char != '\n') {
-                result += current_char;
-                advance();
+            switch (c) {
+                case '=': type = T_ASSIGNOP; break;
+                case '+': type = T_PLUS; break;
+                case '-': type = T_MINUS; break;
+                case '*': type = T_MULT; break;
+                case '/': type = T_DIV; break;
+                case '%': type = T_MOD; break;
+                case '<': type = T_LT; break;
+                case '>': type = T_GT; break;
+                case '!': type = T_NOT; break;
+                case '&': type = T_BITAND; break;
+                case '|': type = T_BITOR; break;
+                case '^': type = T_BITXOR; break;
+                case '~': type = T_BITNOT; break;
+                case '(': type = T_PARENL; break;
+                case ')': type = T_PARENR; break;
+                case '{': type = T_BRACEL; break;
+                case '}': type = T_BRACER; break;
+                case '[': type = T_BRACKL; break;
+                case ']': type = T_BRACKR; break;
+                case ',': type = T_COMMA; break;
+                case ';': type = T_SEMICOLON; break;
+                case ':': type = T_COLON; break;
+                case '?': type = T_QUESTION; break;
+                case '.': type = T_DOT; break;
+                default:
+                    cerr << "Error: Unknown token at line " << line << ", column " << column 
+                         << " -> '" << c << "'" << endl;
+                    break;
             }
-            
-            return make_token(T_COMMENT, result);
-        } else if (peek() == '*') { // Multi-line comment
-            advance(); // Skip '/'
-            advance(); // Skip '*'
-            
-            while (current_char != '\0') {
-                if (current_char == '*' && peek() == '/') {
-                    advance(); // Skip '*'
-                    advance(); // Skip '/'
-                    return make_token(T_COMMENT, result);
-                }
-                result += current_char;
-                advance();
-            }
-            
-            return make_token(T_UNKNOWN, "Unclosed comment");
-        } else {
-            return make_token(T_DIV, "/");
+            pos++;
+            column++;
         }
-    }
-    
-    Token parse_operator() {
-        int start_col = column;
-        char first_char = current_char;
-        advance();
-        
-        switch (first_char) {
-            case '=':
-                if (current_char == '=') {
-                    advance();
-                    return make_token(T_EQUALSOP, "==");
-                }
-                return make_token(T_ASSIGNOP, "=");
-                
-            case '+':
-                return make_token(T_PLUS, "+");
-                
-            case '-':
-                return make_token(T_MINUS, "-");
-                
-            case '*':
-                return make_token(T_MULT, "*");
-                
-            case '/':
-                return parse_comment(); // Handles comments and division
-                
-            case '%':
-                return make_token(T_MOD, "%");
-                
-            case '<':
-                if (current_char == '=') {
-                    advance();
-                    return make_token(T_LTE, "<=");
-                } else if (current_char == '<') {
-                    advance();
-                    return make_token(T_LEFTSHIFT, "<<");
-                }
-                return make_token(T_LT, "<");
-                
-            case '>':
-                if (current_char == '=') {
-                    advance();
-                    return make_token(T_GTE, ">=");
-                } else if (current_char == '>') {
-                    advance();
-                    return make_token(T_RIGHTSHIFT, ">>");
-                }
-                return make_token(T_GT, ">");
-                
-            case '!':
-                if (current_char == '=') {
-                    advance();
-                    return make_token(T_NEQ, "!=");
-                }
-                return make_token(T_NOT, "!");
-                
-            case '&':
-                if (current_char == '&') {
-                    advance();
-                    return make_token(T_AND, "&&");
-                }
-                return make_token(T_BITAND, "&");
-                
-            case '|':
-                if (current_char == '|') {
-                    advance();
-                    return make_token(T_OR, "||");
-                }
-                return make_token(T_BITOR, "|");
-                
-            case '^':
-                return make_token(T_BITXOR, "^");
-                
-            case '~':
-                return make_token(T_BITNOT, "~");
-                
-            default:
-                return make_token(T_UNKNOWN, string(1, first_char));
-        }
-    }
-    
-    Token parse_punctuation() {
-        char c = current_char;
-        advance();
-        
-        switch (c) {
-            case '(': return make_token(T_PARENL, "(");
-            case ')': return make_token(T_PARENR, ")");
-            case '{': return make_token(T_BRACEL, "{");
-            case '}': return make_token(T_BRACER, "}");
-            case '[': return make_token(T_BRACKL, "[");
-            case ']': return make_token(T_BRACKR, "]");
-            case ',': return make_token(T_COMMA, ",");
-            case ';': return make_token(T_SEMICOLON, ";");
-            case ':': return make_token(T_COLON, ":");
-            case '?': return make_token(T_QUESTION, "?");
-            case '.': return make_token(T_DOT, ".");
-            default: return make_token(T_UNKNOWN, string(1, c));
-        }
+        tokens.push_back({type, value, start_line, start_column});
     }
 
-public:
-    Lexer(const string& src) : source(src), position(0), line(1), column(1), current_char('\0') {
-        if (!source.empty()) {
-            current_char = source[0];
-            position = 1;
-        }
-    }
-    
-    vector<Token> tokenize() {
-        vector<Token> tokens;
-        
-        while (current_char != '\0') {
-            skip_whitespace();
-            
-            if (current_char == '\0') break;
-            
-            if (isalpha(current_char) || current_char == '_') {
-                tokens.push_back(parse_identifier());
-            } else if (isdigit(current_char)) {
-                tokens.push_back(parse_number());
-            } else if (current_char == '"') {
-                tokens.push_back(parse_string());
-            } else if (ispunct(current_char)) {
-                if (current_char == '/' && (peek() == '/' || peek() == '*')) {
-                    Token comment = parse_comment();
-                    if (comment.type != T_COMMENT) {
-                        tokens.push_back(comment);
-                    }
-                } else {
-                    Token op_token = parse_operator();
-                    if (op_token.type == T_DIV) {
-                        tokens.push_back(op_token);
-                    } else if (op_token.type != T_COMMENT) {
-                        tokens.push_back(op_token);
-                    }
-                }
-            } else {
-                tokens.push_back(parse_punctuation());
-            }
-        }
-        
-        tokens.push_back({T_EOF, "", line, column});
-        return tokens;
-    }
-};
+    tokens.push_back({T_EOF, "", line, column});
+    return tokens;
+}
 
 string tokenTypeToString(TokenType type) {
     switch(type) {
@@ -414,42 +386,42 @@ string tokenTypeToString(TokenType type) {
         case T_COMMENT: return "T_COMMENT";
         case T_UNKNOWN: return "T_UNKNOWN";
         case T_EOF: return "T_EOF";
+        case T_INVALID_IDENTIFIER: return "T_INVALID_IDENTIFIER";
+        case T_INCREMENT: return "T_INCREMENT";
+        case T_PLUS_ASSIGN: return "T_PLUS_ASSIGN";
         default: return "UNKNOWN";
     }
 }
 
 int main() {
-    string program = R"(fn int my_fn(int x, float y) {
-        // This is a comment
-        string my_str = "Hello \"world\"!\n\tEscaped";
-        bool my_bool = true;
-        int result = x * y + 10;
-        
-        if (x <= 40 && y != 0) {
-            for (int i = 0; i < 10; i++) {
-                result += i & 0xFF;
+    string program = R"(
+        fn int my_fn(int x, float y) {
+            // This is a comment
+            string my_str = "Hello \"world\"!\n\tEscaped";
+            bool my_bool = true;
+            int 123abc; // Invalid identifier
+            int my@var; // Invalid identifier
+            int result = x * y + 10;
+            
+            if (x <= 40 && y != 0) {
+                for (int i = 0; i < 10; i++) {
+                    result += i & 0xFF;
+                }
             }
+            
+            /* Multi-line
+               comment */
+            return result << 2;
         }
-        
-        /* Multi-line
-           comment */
-        return result << 2;
-    })";
+    )";
 
-    Lexer lexer(program);
-    vector<Token> tokens = lexer.tokenize();
-    
+    vector<Token> tokens = tokenize(program);
     for (auto &t : tokens) {
-        if (t.type != T_COMMENT && t.type != T_EOF) {
+        if (t.type != T_COMMENT) {
             cout << "Token(" << tokenTypeToString(t.type) << ", \"" << t.value 
                  << "\") at line " << t.line << ", column " << t.column << endl;
         }
     }
-    
-    // Print EOF separately
-    Token eof = tokens.back();
-    cout << "Token(" << tokenTypeToString(eof.type) << ", \"" << eof.value 
-         << "\") at line " << eof.line << ", column " << eof.column << endl;
     
     return 0;
 }
