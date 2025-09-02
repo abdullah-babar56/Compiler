@@ -43,6 +43,8 @@ vector<pair<regex, TokenType>> tokenPatterns = {
     {regex("^true|^false"), T_BOOLLIT},
 
         // Literals
+    {regex("^\\.[0-9]+([eE][+-]?[0-9]+)?"), T_FLOATLIT},  // .5  .123  .5e-2
+
     {regex("^[0-9]+\\.[0-9]+([eE][+-]?[0-9]+)?"), T_FLOATLIT},
     {regex("^[0-9]+\\.[0-9]+"), T_FLOATLIT},
     {regex("^0[xX][0-9a-fA-F]+"), T_INTLIT}, // Hexadecimal literals
@@ -281,7 +283,7 @@ int main() {
     fn int my_fn(bool x, bool y) {
     if(x || y)
     {
-     y++;
+     y = .;
     }
     })";
 
