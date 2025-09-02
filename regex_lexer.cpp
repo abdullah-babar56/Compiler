@@ -13,7 +13,10 @@ enum TokenType {
     T_PARENL, T_PARENR, T_BRACEL, T_BRACER, T_BRACKL, T_BRACKR,
     T_COMMA, T_SEMICOLON, T_COLON, T_QUESTION, T_DOT,
     T_COMMENT, T_UNKNOWN, T_EOF,
-    T_INVALID_IDENTIFIER , T_INCREMENT , T_PLUS_ASSIGN// Added for invalid identifiers
+    T_INVALID_IDENTIFIER , T_INCREMENT , T_PLUS_ASSIGN,
+    
+    T_DECREMENT,    // --
+    T_MINUS_ASSIGN  // -=
 };
 
 struct Token {
@@ -60,6 +63,8 @@ vector<pair<regex, TokenType>> tokenPatterns = {
     {regex("^="), T_ASSIGNOP},
     {regex("^\\+\\+"), T_INCREMENT},
     {regex("^\\+\\="), T_PLUS_ASSIGN},
+    {regex("^--"), T_DECREMENT},        
+    {regex("^\\-\\="), T_MINUS_ASSIGN}, 
     {regex("^\\+"), T_PLUS},
     {regex("^-"), T_MINUS},
     {regex("^\\*"), T_MULT},
@@ -259,6 +264,13 @@ string tokenTypeToString(TokenType type) {
         case T_UNKNOWN: return "T_UNKNOWN";
         case T_EOF: return "T_EOF";
         case T_INVALID_IDENTIFIER: return "T_INVALID_IDENTIFIER";
+        case T_INCREMENT: return "T_INCREMENT";
+        case T_DECREMENT: return "T_DECREMENT";
+        case T_PLUS_ASSIGN: return "T_PLUS_ASSIGN";
+        case T_MINUS_ASSIGN: return "T_MINUS_ASSIGN";
+        
+
+        
         default: return "UNKNOWN";
     }
 }
@@ -266,10 +278,10 @@ string tokenTypeToString(TokenType type) {
 int main() {
 
     string program = R"(
-    fn int my_fn(int x, float y) {
-    if(x=1)
+    fn int my_fn(bool x, bool y) {
+    if(x || y)
     {
-     y=0;
+     y++;
     }
     })";
 
