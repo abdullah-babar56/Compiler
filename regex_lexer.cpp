@@ -38,6 +38,14 @@ vector<pair<regex, TokenType>> tokenPatterns = {
     {regex("^break"), T_BREAK},
     {regex("^continue"), T_CONTINUE},
     {regex("^true|^false"), T_BOOLLIT},
+
+        // Literals
+    {regex("^[0-9]+\\.[0-9]+([eE][+-]?[0-9]+)?"), T_FLOATLIT},
+    {regex("^[0-9]+\\.[0-9]+"), T_FLOATLIT},
+    {regex("^0[xX][0-9a-fA-F]+"), T_INTLIT}, // Hexadecimal literals
+    {regex("^[0-9]+"), T_INTLIT},
+    {regex("^\"([^\"\\\\]|\\\\.)*\""), T_STRINGLIT},
+    
     
     // Invalid identifiers (e.g., starting with a digit or containing invalid chars)
     {regex("^[0-9][a-zA-Z0-9_]*"), T_INVALID_IDENTIFIER}, // e.g., 123abc
@@ -46,13 +54,7 @@ vector<pair<regex, TokenType>> tokenPatterns = {
     // Valid identifiers
     {regex("^[a-zA-Z_][a-zA-Z0-9_]*"), T_IDENTIFIER},
     
-    // Literals
-    {regex("^[0-9]+\\.[0-9]+([eE][+-]?[0-9]+)?"), T_FLOATLIT},
-    {regex("^[0-9]+\\.[0-9]+"), T_FLOATLIT},
-    {regex("^0[xX][0-9a-fA-F]+"), T_INTLIT}, // Hexadecimal literals
-    {regex("^[0-9]+"), T_INTLIT},
-    {regex("^\"([^\"\\\\]|\\\\.)*\""), T_STRINGLIT},
-    
+
     // Operators
     {regex("^=="), T_EQUALSOP},
     {regex("^="), T_ASSIGNOP},
@@ -262,26 +264,16 @@ string tokenTypeToString(TokenType type) {
 }
 
 int main() {
+
     string program = R"(
-        fn int my_fn(int x, float y) {
-            // This is a comment
-            string my_str = "Hello \"world\"!\n\tEscaped";
-            bool my_bool = true;
-            int 123abc; // Invalid identifier
-            int my@var; // Invalid identifier
-            int result = x * y + 10;
-            
-            if (x <= 40 && y != 0) {
-                for (int i = 0; i < 10; i++) {
-                    result += i & 0xFF;
-                }
-            }
-            
-            /* Multi-line
-               comment */
-            return result << 2;
-        }
-    )";
+    fn int my_fn(int x, float y) {
+    if(x=1)
+    {
+     y=0;
+    }
+    })";
+
+
 
     vector<Token> tokens = tokenize(program);
     for (auto &t : tokens) {
