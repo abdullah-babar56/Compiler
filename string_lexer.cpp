@@ -395,25 +395,55 @@ string tokenTypeToString(TokenType type) {
 
 int main() {
     string program = R"(
-        fn int my_fn(int x, float y) {
-            // This is a comment
-            string my_str = "Hello \"world\"!\n\tEscaped";
-            bool my_bool = true;
-            int 123abc; // Invalid identifier
-            int my@var; // Invalid identifier
-            int result = x * y + 10;
-            
-            if (x <= 40 && y != 0) {
-                for (int i = 0; i < 10; i++) {
-                    result += i & 0xFF;
-                }
-            }
-            
-            /* Multi-line
-               comment */
-            return result << 2;
+
+// Single line comment
+/* Multi
+   line
+   comment */
+
+fn int my_fn(bool x, float y, string s) {
+    int a = 123;
+    int b = 0x1A3F;       // hex literal
+    float c = 3.14;
+    float d = .5e-2;
+    string msg = "Hello \"World\"!";
+    bool flag = true;
+
+    // Operators
+    a++;
+    b--;
+    a += 10;
+    b -= 5;
+    c = a * b / d % 2;
+    flag = !flag && (a < b || c >= d);
+
+    // Bitwise ops
+    int m = a & b | c ^ d;
+    int n = ~m << 2 >> 1;
+
+    // Control flow
+    if (flag == false) {
+        return a != b ? c : d;
+    } else {
+        while (a > 0) {
+            a = a - 1;
+            continue;
         }
-    )";
+        for (int i = 0; i < 10; i++) {
+            break;
+        }
+    }
+
+    // Invalid identifiers
+    123abc;   // starts with number
+    my@var;   // invalid char
+
+    // Dot operator
+    obj.method();
+
+    return 0;
+}
+)";
 
     vector<Token> tokens = tokenize(program);
     for (auto &t : tokens) {
